@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
 using BepInEx;
@@ -12,12 +11,15 @@ using RoR2.Skills;
 using UnityEngine;
 using UnityEngine.Networking;
 using KinematicCharacterController;
+using RoR2.Projectile;
+using EntityStates.Grovetender;
+using RoR2.UI;
 
 namespace PlayableGrovetender
 {
     [BepInDependency("com.bepis.r2api")]
 
-    [BepInPlugin(MODUID, "Playable Grovetender", "0.0.1")]
+    [BepInPlugin(MODUID, "Playable Grovetender", "0.0.2")]
     [R2APISubmoduleDependency(nameof(PrefabAPI), nameof(SurvivorAPI), nameof(LoadoutAPI), nameof(LanguageAPI), nameof(BuffAPI), nameof(EffectAPI))]
 
     public class GrovetenderPlugin : BaseUnityPlugin
@@ -26,20 +28,27 @@ namespace PlayableGrovetender
 
         internal static GrovetenderPlugin instance;
 
-        public GameObject myCharacter;
-        public GameObject characterDisplay;
-        public GameObject doppelganger;
+        public static GameObject myCharacter;
+        public static GameObject characterDisplay;
+        public static GameObject doppelganger;
 
-        private static readonly Color CHAR_COLOR = new Color(0.64f, 0.31f, 0.22f);
+        public static GameObject wispPrefab;
+        public static GameObject healWispPrefab;
+        public static GameObject healWispGhost;
+
+        public static GameObject grovetenderCrosshair;
+
+        private static readonly Color CHAR_COLOR = new Color(0.09f, 0.03f, 0.03f);
+        private static readonly Color HEAL_COLOR = new Color(0.27f, 1, 0.32f);
 
         private static ConfigEntry<bool> originalSize;
-        /*private static ConfigEntry<float> baseHealth;
+        private static ConfigEntry<float> baseHealth;
         private static ConfigEntry<float> healthGrowth;
         private static ConfigEntry<float> baseArmor;
         private static ConfigEntry<float> baseDamage;
         private static ConfigEntry<float> damageGrowth;
         private static ConfigEntry<float> baseRegen;
-        private static ConfigEntry<float> regenGrowth;*/
+        private static ConfigEntry<float> regenGrowth;
 
 
         public void Awake()
@@ -50,22 +59,25 @@ namespace PlayableGrovetender
             Assets.PopulateAssets();
             RegisterStates();
             RegisterCharacter();
+            ItemDisplays.RegisterDisplays();
+            Skins.RegisterSkins();
+            RegisterProjectiles();
             CreateMaster();
         }
 
-        void ReadConfig()
+        private void ReadConfig()
         {
             originalSize = base.Config.Bind<bool>(new ConfigDefinition("10 - Misc", "Original Size"), false, new ConfigDescription("Keeps the original size of the Grovetenders", null, Array.Empty<object>()));
-            /*baseHealth = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Health"), 200f, new ConfigDescription("Base health", null, Array.Empty<object>()));
+            baseHealth = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Health"), 200f, new ConfigDescription("Base health", null, Array.Empty<object>()));
             healthGrowth = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Health growth"), 48f, new ConfigDescription("Health per level", null, Array.Empty<object>()));
             baseArmor = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Armor"), 20f, new ConfigDescription("Base armor", null, Array.Empty<object>()));
             baseDamage = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Damage"), 12f, new ConfigDescription("Base damage", null, Array.Empty<object>()));
             damageGrowth = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Damage growth"), 2.4f, new ConfigDescription("Damage per level", null, Array.Empty<object>()));
             baseRegen = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Regen"), 2.5f, new ConfigDescription("Base HP regen", null, Array.Empty<object>()));
-            regenGrowth = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Regen growth"), 0.5f, new ConfigDescription("HP regen per level", null, Array.Empty<object>()));*/
+            regenGrowth = base.Config.Bind<float>(new ConfigDefinition("01 - General Settings", "Regen growth"), 0.5f, new ConfigDescription("HP regen per level", null, Array.Empty<object>()));
         }
 
-        void RegisterCharacter()
+        private void RegisterCharacter()
         {
             //create a clone of the grovetender prefab
             myCharacter = PrefabAPI.InstantiateClone(Resources.Load<GameObject>("Prefabs/CharacterBodies/GravekeeperBody"), "Prefabs/CharacterBodies/GrovetenderBody", true);
@@ -85,11 +97,11 @@ namespace PlayableGrovetender
             charBody.bodyFlags = CharacterBody.BodyFlags.ImmuneToExecutes;
 
             //swap to generic mainstate to fix clunky controls
-            myCharacter.GetComponent<EntityStateMachine>().mainStateType = new SerializableEntityStateType(typeof(EntityStates.GenericCharacterMain));
+            myCharacter.GetComponent<EntityStateMachine>().mainStateType = new SerializableEntityStateType(typeof(GenericCharacterMain));
 
             myCharacter.GetComponentInChildren<Interactor>().maxInteractionDistance = 5f;
 
-            //charBody.portraitIcon = 
+            charBody.portraitIcon = Assets.charPortrait.texture;
 
 
             bool flag = originalSize.Value;
@@ -100,14 +112,14 @@ namespace PlayableGrovetender
 
                 myCharacter.GetComponent<ModelLocator>().modelBaseTransform.gameObject.transform.localScale = Vector3.one * 0.3f;
                 myCharacter.GetComponent<ModelLocator>().modelBaseTransform.gameObject.transform.Translate(new Vector3(0f, 5.6f, 0f));
-                charBody.aimOriginTransform.Translate(new Vector3(0f, -2f, 0f));
+                charBody.aimOriginTransform.Translate(new Vector3(0f, -2.5f, 0f));
 
                 charBody.baseJumpPower = Resources.Load<GameObject>("Prefabs/CharacterBodies/LoaderBody").GetComponent<CharacterBody>().baseJumpPower;
                 charBody.baseMoveSpeed = Resources.Load<GameObject>("Prefabs/CharacterBodies/LoaderBody").GetComponent<CharacterBody>().baseMoveSpeed;
                 charBody.levelMoveSpeed = Resources.Load<GameObject>("Prefabs/CharacterBodies/LoaderBody").GetComponent<CharacterBody>().levelMoveSpeed;
                 charBody.sprintingSpeedMultiplier = Resources.Load<GameObject>("Prefabs/CharacterBodies/LoaderBody").GetComponent<CharacterBody>().sprintingSpeedMultiplier;
 
-                myCharacter.GetComponentInChildren<CharacterMotor>().mass = 100;
+                myCharacter.GetComponentInChildren<CharacterMotor>().mass = 300;
 
                 myCharacter.GetComponent<CameraTargetParams>().cameraParams = Resources.Load<GameObject>("Prefabs/CharacterBodies/CrocoBody").GetComponent<CameraTargetParams>().cameraParams;
 
@@ -127,27 +139,30 @@ namespace PlayableGrovetender
 
 
 
-            characterDisplay.transform.localScale = Vector3.one * 0.1f;
+            characterDisplay.transform.localScale = Vector3.one * 0.15f;
             characterDisplay.AddComponent<NetworkIdentity>();
+
+            //create the custom crosshair
+            grovetenderCrosshair = PrefabAPI.InstantiateClone(Resources.Load<GameObject>("Prefabs/Crosshair/LoaderCrosshair"), "GrovetenderCrosshair", true);
+            grovetenderCrosshair.AddComponent<NetworkIdentity>();
+            Destroy(grovetenderCrosshair.GetComponent<LoaderHookCrosshairController>());
+            //Destroy(grovetenderCrosshair.transform.GetChild(1));
+            //Destroy(grovetenderCrosshair.transform.GetChild(0));
 
             //networking
 
             if (myCharacter) PrefabAPI.RegisterNetworkPrefab(myCharacter);
             if (characterDisplay) PrefabAPI.RegisterNetworkPrefab(characterDisplay);
             if (doppelganger) PrefabAPI.RegisterNetworkPrefab(doppelganger);
-
-            /*ProjectileCatalog.getAdditionalEntries += list =>
-            {
-                list.Add();
-            };*/
+            if (grovetenderCrosshair) PrefabAPI.RegisterNetworkPrefab(grovetenderCrosshair);
 
 
 
-            string desc = "The Grovetender something something<color=#CCD3E0>" + Environment.NewLine + Environment.NewLine;
-            desc = desc + "< ! > 1." + Environment.NewLine + Environment.NewLine;
-            desc = desc + "< ! > 2." + Environment.NewLine + Environment.NewLine;
-            desc = desc + "< ! > 3." + Environment.NewLine + Environment.NewLine;
-            desc = desc + "< ! > 4.</color>" + Environment.NewLine;
+            string desc = "The Grovetender is a slow, tanky survivor who makes use of Wisps to heal and deal damage.<color=#CCD3E0>" + Environment.NewLine + Environment.NewLine;
+            desc = desc + "< ! > Disciple Swarm's low damage is made up for with its consistent item procs." + Environment.NewLine + Environment.NewLine;
+            desc = desc + "< ! > Disciple Swarm can be held during your other skills." + Environment.NewLine + Environment.NewLine;
+            desc = desc + "< ! > Piercing Wisp has the potential for massive heals when lined up right." + Environment.NewLine + Environment.NewLine;
+            desc = desc + "< ! > Scorched Shotgun can be used to pull flying enemies into terrain for lethal impact damage.</color>" + Environment.NewLine;
 
             LanguageAPI.Add("GROVETENDER_NAME", "Grovetender");
             LanguageAPI.Add("GROVETENDER_DESCRIPTION", desc);
@@ -157,26 +172,17 @@ namespace PlayableGrovetender
             charBody.name = "GROVETENDER_NAME";
             charBody.baseNameToken = "GROVETENDER_NAME";
             charBody.subtitleNameToken = "GROVETENDER_SUBTITLE";
-            charBody.crosshairPrefab = Resources.Load<GameObject>("Prefabs/Crosshair/SimpleDotCrosshair");
+            charBody.crosshairPrefab = grovetenderCrosshair;
 
-            charBody.baseMaxHealth = 160f;
-            charBody.levelMaxHealth = 48f;
-            charBody.baseRegen = 0.5f;
-            charBody.levelRegen = 0.2f;
-            charBody.baseDamage = 15f;
-            charBody.levelDamage = 3f;
-            charBody.baseArmor = 0f;
-            charBody.baseCrit = 1f;
-
-            //use this instead when config is ready
-            /*charBody.baseMaxHealth = baseHealth.Value;
+            charBody.baseMaxHealth = baseHealth.Value;
             charBody.levelMaxHealth = healthGrowth.Value;
             charBody.baseRegen = baseRegen.Value;
             charBody.levelRegen = regenGrowth.Value;
             charBody.baseDamage = baseDamage.Value;
             charBody.levelDamage = damageGrowth.Value;
             charBody.baseArmor = baseArmor.Value;
-            charBody.baseCrit = 1;*/
+            charBody.levelArmor = 1;
+            charBody.baseCrit = 1;
 
             charBody.preferredPodPrefab = Resources.Load<GameObject>("Prefabs/CharacterBodies/CrocoBody").GetComponent<CharacterBody>().preferredPodPrefab;
 
@@ -206,12 +212,15 @@ namespace PlayableGrovetender
             };
         }
 
-        void RegisterStates()
+        private void RegisterStates()
         {
-            LoadoutAPI.AddSkill(typeof(EntityStates.Grovetender.DiscipleSwarm));
+            LoadoutAPI.AddSkill(typeof(DiscipleSwarm));
+            LoadoutAPI.AddSkill(typeof(HealingWisp));
+            LoadoutAPI.AddSkill(typeof(PrepShotgun));
+            LoadoutAPI.AddSkill(typeof(FireShotgun));
         }
 
-        void SkillSetup()
+        private void SkillSetup()
         {
             foreach (GenericSkill obj in myCharacter.GetComponentsInChildren<GenericSkill>())
             {
@@ -225,30 +234,30 @@ namespace PlayableGrovetender
             SpecialSetup();
         }
 
-        void PassiveSetup()
+        private void PassiveSetup()
         {
             SkillLocator component = myCharacter.GetComponent<SkillLocator>();
 
-            LanguageAPI.Add("GROVETENDER_PASSIVE_NAME", "A passive");
-            LanguageAPI.Add("GROVETENDER_PASSIVE_DESCRIPTION", "Sample Text.");
+            LanguageAPI.Add("GROVETENDER_PASSIVE_NAME", "Rejuvenation");
+            LanguageAPI.Add("GROVETENDER_PASSIVE_DESCRIPTION", "<style=cIsHealing>Heal</style> for a portion of all <style=cIsDamage>damage dealt</style> with <style=cIsUtility>Wisps</style>.");
 
-            component.passiveSkill.enabled = false;
+            component.passiveSkill.enabled = true;
             component.passiveSkill.skillNameToken = "GROVETENDER_PASSIVE_NAME";
             component.passiveSkill.skillDescriptionToken = "GROVETENDER_PASSIVE_DESCRIPTION";
-            //component.passiveSkill.icon = ;
+            component.passiveSkill.icon = Assets.iconP;
         }
 
-        void PrimarySetup()
+        private void PrimarySetup()
         {
             SkillLocator component = myCharacter.GetComponent<SkillLocator>();
 
-            string desc = "Fire small <style=cIsUtility>homing Wisps</style> that explode upon contact for <style=cIsDamage>" + EntityStates.Grovetender.DiscipleSwarm.damageCoefficient * 100f + "% damage</style>.";
+            string desc = "Fire small <style=cIsUtility>tracking Wisps</style> that explode upon contact for <style=cIsDamage>" + DiscipleSwarm.damageCoefficient * 100f + "% damage</style>.";
 
             LanguageAPI.Add("GROVETENDER_PRIMARY_WISP_NAME", "Disciple Swarm");
             LanguageAPI.Add("GROVETENDER_PRIMARY_WISP_DESCRIPTION", desc);
 
             SkillDef mySkillDef = ScriptableObject.CreateInstance<SkillDef>();
-            mySkillDef.activationState = new SerializableEntityStateType(typeof(EntityStates.GravekeeperMonster.Weapon.GravekeeperBarrage));
+            mySkillDef.activationState = new SerializableEntityStateType(typeof(DiscipleSwarm));
             mySkillDef.activationStateMachineName = "Weapon";
             mySkillDef.baseMaxStock = 1;
             mySkillDef.baseRechargeInterval = 0f;
@@ -264,7 +273,7 @@ namespace PlayableGrovetender
             mySkillDef.requiredStock = 1;
             mySkillDef.shootDelay = 0f;
             mySkillDef.stockToConsume = 1;
-            //mySkillDef.icon = ;
+            mySkillDef.icon = Assets.icon1;
             mySkillDef.skillDescriptionToken = "GROVETENDER_PRIMARY_WISP_DESCRIPTION";
             mySkillDef.skillName = "GROVETENDER_PRIMARY_WISP_NAME";
             mySkillDef.skillNameToken = "GROVETENDER_PRIMARY_WISP_NAME";
@@ -286,19 +295,20 @@ namespace PlayableGrovetender
             };
         }
 
-        void SecondarySetup()
+        private void SecondarySetup()
         {
             SkillLocator component = myCharacter.GetComponent<SkillLocator>();
 
-            string desc = "Fire a <style=cIsUtility>piercing Wisp</style> that deals <style=cIsDamage>" + 0.5f * 100f + "% damage</style> and <style=cIsHealing>heals 5% max health</style> for each enemy hit.";
-            LanguageAPI.Add("GROVETENDER_SECONDARY_HEAL_NAME", "Rejuvenation");
+            string desc = "Fire a <style=cIsUtility>piercing Wisp</style> that deals <style=cIsDamage>" + HealingWisp.damageCoefficient * 100f + "% damage</style>.";
+
+            LanguageAPI.Add("GROVETENDER_SECONDARY_HEAL_NAME", "Piercing Wisp");
             LanguageAPI.Add("GROVETENDER_SECONDARY_HEAL_DESCRIPTION", desc);
 
             SkillDef mySkillDef = ScriptableObject.CreateInstance<SkillDef>();
-            mySkillDef.activationState = new SerializableEntityStateType(typeof(EntityStates.TitanMonster.FireMegaLaser));
+            mySkillDef.activationState = new SerializableEntityStateType(typeof(HealingWisp));
             mySkillDef.activationStateMachineName = "Weapon";
             mySkillDef.baseMaxStock = 1;
-            mySkillDef.baseRechargeInterval = 6f;
+            mySkillDef.baseRechargeInterval = 5f;
             mySkillDef.beginSkillCooldownOnSkillEnd = false;
             mySkillDef.canceledFromSprinting = false;
             mySkillDef.fullRestockOnAssign = true;
@@ -306,12 +316,12 @@ namespace PlayableGrovetender
             mySkillDef.isBullets = false;
             mySkillDef.isCombatSkill = true;
             mySkillDef.mustKeyPress = false;
-            mySkillDef.noSprint = true;
+            mySkillDef.noSprint = false;
             mySkillDef.rechargeStock = 1;
             mySkillDef.requiredStock = 1;
             mySkillDef.shootDelay = 0f;
             mySkillDef.stockToConsume = 1;
-            //mySkillDef.icon = ;
+            mySkillDef.icon = Assets.icon2;
             mySkillDef.skillDescriptionToken = "GROVETENDER_SECONDARY_HEAL_DESCRIPTION";
             mySkillDef.skillName = "GROVETENDER_SECONDARY_HEAL_NAME";
             mySkillDef.skillNameToken = "GROVETENDER_SECONDARY_HEAL_NAME";
@@ -333,18 +343,18 @@ namespace PlayableGrovetender
             };
         }
 
-        void UtilitySetup()
+        private void UtilitySetup()
         {
             SkillLocator component = myCharacter.GetComponent<SkillLocator>();
 
-            string desc = "<style=cIsUtility>Dash</style> a short distance.";
+            string desc = "<style=cIsUtility>Leap</style> a short distance.";
 
             LanguageAPI.Add("GROVETENDER_UTILITY_DODGE_NAME", "Sidestep");
             LanguageAPI.Add("GROVETENDER_UTILITY_DODGE_DESCRIPTION", desc);
 
-            SkillDef tempDef = Resources.Load<GameObject>("Prefabs/CharacterBodies/CommandoBody").GetComponentInChildren<SkillLocator>().utility.skillFamily.variants[0].skillDef;
+            SkillDef tempDef = Resources.Load<GameObject>("Prefabs/CharacterBodies/CrocoBody").GetComponentInChildren<SkillLocator>().utility.skillFamily.variants[1].skillDef;
             SkillDef mySkillDef = ScriptableObject.CreateInstance<SkillDef>();
-            mySkillDef.activationState = new SerializableEntityStateType(typeof(EntityStates.Commando.CombatDodge));
+            mySkillDef.activationState = new SerializableEntityStateType(typeof(EntityStates.Croco.ChainableLeap));
             mySkillDef.activationStateMachineName = "Body";
             mySkillDef.baseRechargeInterval = 8;
             mySkillDef.baseMaxStock = 1;
@@ -376,26 +386,26 @@ namespace PlayableGrovetender
 
             skillFamily.variants[0] = new SkillFamily.Variant
             {
-                skillDef = mySkillDef,
+                skillDef = tempDef,
                 unlockableName = "",
                 viewableNode = new ViewablesCatalog.Node(mySkillDef.skillNameToken, false, null)
             };
         }
 
-        void SpecialSetup()
+        private void SpecialSetup()
         {
             SkillLocator component = myCharacter.GetComponent<SkillLocator>();
 
-            string desc = "Fire a burst of <style=cIsUtility>chains</style> that deal <style=cIsDamage>" + EntityStates.GravekeeperBoss.FireHook.projectileDamageCoefficient * 100f + "% damage</style> and  <style=cIsUtility>pull</style> enemies hit. <style=cIsUtility>Hold to lower the attack's spread</style>.";
+            string desc = "Fire a burst of <style=cIsUtility>chains</style> that deal <style=cIsDamage>8x" + FireShotgun.projectileDamageCoefficient * 100f + "% damage</style> and <style=cIsUtility>pull</style> enemies hit.";
 
             LanguageAPI.Add("GROVETENDER_SPECIAL_CHAINS_NAME", "Scorched Shotgun");
             LanguageAPI.Add("GROVETENDER_SPECIAL_CHAINS_DESCRIPTION", desc);
 
             SkillDef mySkillDef = ScriptableObject.CreateInstance<SkillDef>();
-            mySkillDef.activationState = new SerializableEntityStateType(typeof(EntityStates.GravekeeperBoss.PrepHook));
+            mySkillDef.activationState = new SerializableEntityStateType(typeof(PrepShotgun));
             mySkillDef.activationStateMachineName = "Body";
             mySkillDef.baseMaxStock = 1;
-            mySkillDef.baseRechargeInterval = 1;
+            mySkillDef.baseRechargeInterval = 8;
             mySkillDef.beginSkillCooldownOnSkillEnd = true;
             mySkillDef.canceledFromSprinting = false;
             mySkillDef.fullRestockOnAssign = true;
@@ -408,7 +418,7 @@ namespace PlayableGrovetender
             mySkillDef.requiredStock = 1;
             mySkillDef.shootDelay = 0f;
             mySkillDef.stockToConsume = 1;
-            //mySkillDef.icon = ;
+            mySkillDef.icon = Assets.icon4;
             mySkillDef.skillDescriptionToken = "GROVETENDER_SPECIAL_CHAINS_DESCRIPTION";
             mySkillDef.skillName = "GROVETENDER_SPECIAL_CHAINS_NAME";
             mySkillDef.skillNameToken = "GROVETENDER_SPECIAL_CHAINS_NAME";
@@ -430,9 +440,69 @@ namespace PlayableGrovetender
             };
         }
 
+        private void RegisterProjectiles()
+        {
+            wispPrefab = PrefabAPI.InstantiateClone(Resources.Load<GameObject>("Prefabs/Projectiles/GravekeeperTrackingFireball"), "TrackingWisp", true);
+
+            wispPrefab.AddComponent<ProjectileHealOwnerOnDamageInflicted>().fractionOfDamage = 0.4f;
+
+            healWispPrefab = PrefabAPI.InstantiateClone(Resources.Load<GameObject>("Prefabs/Projectiles/Sawmerang"), "HealingWisp", true);
+
+            healWispPrefab.transform.localScale /= 6f;
+            healWispPrefab.transform.GetChild(0).localScale *= 4f;
+
+            Destroy(healWispPrefab.GetComponent<BoxCollider>());
+            Destroy(healWispPrefab.GetComponent<ProjectileDotZone>());
+            healWispPrefab.AddComponent<ProjectileHealOwnerOnDamageInflicted>().fractionOfDamage = 0.8f;
+
+            var projectileComponent = healWispPrefab.GetComponent<ProjectileController>();
+            projectileComponent.startSound = "";
+            projectileComponent.procCoefficient = 1f;
+
+            var hitboxComponent = healWispPrefab.GetComponent<ProjectileOverlapAttack>();
+            hitboxComponent.damageCoefficient = 1f;
+            hitboxComponent.impactEffect = Resources.Load<GameObject>("Prefabs/Effects/OmniEffect/OmniImpactVFXLightning");
+
+            var boomerangComponent = healWispPrefab.GetComponent<BoomerangProjectile>();
+            boomerangComponent.canHitWorld = false;
+            boomerangComponent.impactSpark = null;
+            boomerangComponent.travelSpeed = 60;
+
+
+            healWispGhost = PrefabAPI.InstantiateClone(Resources.Load<GameObject>("Prefabs/ProjectileGhosts/GravekeeperTrackingFireballGhost"), "HealingWispGhost", true);
+            healWispGhost.AddComponent<NetworkIdentity>();
+
+            foreach (ParticleSystem i in healWispGhost.GetComponentsInChildren<ParticleSystem>())
+            {
+                if (i)
+                {
+                    var main = i.main;
+                    main.startColor = HEAL_COLOR;
+                }
+            }
+
+            foreach (Light i in healWispGhost.GetComponentsInChildren<Light>())
+            {
+                if (i) i.color = HEAL_COLOR;
+            }
+
+
+            projectileComponent.ghostPrefab = healWispGhost;
+
+
+
+            ProjectileCatalog.getAdditionalEntries += list =>
+            {
+                list.Add(wispPrefab);
+                list.Add(healWispPrefab);
+            };
+        }
+
+
 
         private void CreateMaster()
         {
+            //create the doppelganger, uses commando ai bc i can't be bothered writing my own
             doppelganger = PrefabAPI.InstantiateClone(Resources.Load<GameObject>("Prefabs/CharacterMasters/CommandoMonsterMaster"), "GrovetenderMonsterMaster", true);
 
             MasterCatalog.getAdditionalEntries += delegate (List<GameObject> list)
@@ -446,6 +516,7 @@ namespace PlayableGrovetender
 
         public class MenuAnim : MonoBehaviour
         {
+            //animates him in character select
             internal void OnEnable()
             {
                 bool flag = base.gameObject.transform.parent.gameObject.name == "CharacterPad";
@@ -466,7 +537,7 @@ namespace PlayableGrovetender
 
                 GameObject.Instantiate<GameObject>(EntityStates.GravekeeperBoss.SpawnState.spawnEffectPrefab, effectTransform.position, Quaternion.identity);
 
-                Util.PlayScaledSound(EntityStates.GravekeeperBoss.SpawnState.spawnSoundString, base.gameObject, 2.5f);
+                Util.PlayScaledSound(EntityStates.GravekeeperBoss.SpawnState.spawnSoundString, base.gameObject, 1.5f);
 
                 PlayAnimation("Body", "Spawn", "Spawn.playbackRate", 3, animator);
 
@@ -497,39 +568,34 @@ namespace PlayableGrovetender
 
     public static class Assets
     {
-        //will use this all later
-        /*public static AssetBundle MainAssetBundle = null;
+        public static Sprite charPortrait;
 
         public static Sprite iconP;
         public static Sprite icon1;
         public static Sprite icon2;
-        public static Sprite icon3;
-        public static Sprite icon4;*/
+        //public static Sprite icon3;
+        public static Sprite icon4;
 
         public static void PopulateAssets()
         {
-            /*if (MainAssetBundle == null)
-            {
-                using (var assetStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PlayableGrovetender.grovetender"))
-                {
-                    MainAssetBundle = AssetBundle.LoadFromStream(assetStream);
-                }
-            }*/
+            charPortrait = Assets.CreateSprite(Properties.Resources.GrovetenderBody);
 
-            /*using (var bankStream = Assembly.GetExecutingAssembly().GetManifestResourceStream("PlayableSephiroth.SephirothBank.bnk"))
-            {
-                var bytes = new byte[bankStream.Length];
-                bankStream.Read(bytes, 0, bytes.Length);
-                SoundBanks.Add(bytes);
-            }*/
+            iconP = Assets.CreateSprite(Properties.Resources.PassiveIcon);
+            icon1 = Assets.CreateSprite(Properties.Resources.SwarmIcon);
+            icon2 = Assets.CreateSprite(Properties.Resources.HealIcon);
+            icon4 = Assets.CreateSprite(Properties.Resources.ChainIcon);
+        }
 
-            // gather assets
+        static Sprite CreateSprite(Byte[] resourceBytes)
+        {
+            if (resourceBytes == null) throw new ArgumentNullException(nameof(resourceBytes));
 
-            /*iconP = MainAssetBundle.LoadAsset<Sprite>("PassiveIcon");
-            icon1 = MainAssetBundle.LoadAsset<Sprite>("PrimaryIcon");
-            icon2 = MainAssetBundle.LoadAsset<Sprite>("SecondaryIcon");
-            icon3 = MainAssetBundle.LoadAsset<Sprite>("UtilityIcon");
-            icon4 = MainAssetBundle.LoadAsset<Sprite>("SpecialIcon");*/
+            Texture2D temp = new Texture2D(128, 128, TextureFormat.RGBAFloat, false);
+            temp.LoadImage(resourceBytes, false);
+
+            Sprite newSprite = Sprite.Create(temp, new Rect(0f, 0f, (float)temp.width, (float)temp.height), new Vector2(0.5f, 0.5f));
+
+            return newSprite;
         }
     }
 }

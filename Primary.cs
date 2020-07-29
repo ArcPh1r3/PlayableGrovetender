@@ -6,10 +6,11 @@ using EntityStates.GravekeeperMonster.Weapon;
 
 namespace EntityStates.Grovetender
 {
-    public class DiscipleSwarm : BaseState
+    public class DiscipleSwarm : BaseSkillState
     {
-        public static float damageCoefficient = 0.5f;
+        public static float damageCoefficient = 0.35f;
         public static float projectileForce = 5f;
+        public static float missileSpawnFrequency = 0.4f;
 
         private float stopwatch;
         private float missileStopwatch;
@@ -34,8 +35,6 @@ namespace EntityStates.Grovetender
 
             EffectManager.SimpleMuzzleFlash(GravekeeperBarrage.jarOpenEffectPrefab, base.gameObject, GravekeeperBarrage.jarEffectChildLocatorString, false);
             Util.PlaySound(GravekeeperBarrage.jarOpenSoundString, base.gameObject);
-
-            base.characterBody.SetAimTimer(2f);
         }
 
         private void FireBlob(Ray projectileRay, float bonusPitch, float bonusYaw)
@@ -45,7 +44,7 @@ namespace EntityStates.Grovetender
 
             if (NetworkServer.active)
             {
-                ProjectileManager.instance.FireProjectile(GravekeeperBarrage.projectilePrefab, projectileRay.origin, Util.QuaternionSafeLookRotation(projectileRay.direction), base.gameObject, this.damageStat * DiscipleSwarm.damageCoefficient, DiscipleSwarm.projectileForce, Util.CheckRoll(this.critStat, base.characterBody.master), DamageColorIndex.Default, null, -1f);
+                ProjectileManager.instance.FireProjectile(PlayableGrovetender.GrovetenderPlugin.wispPrefab, projectileRay.origin, Util.QuaternionSafeLookRotation(projectileRay.direction), base.gameObject, this.damageStat * DiscipleSwarm.damageCoefficient, DiscipleSwarm.projectileForce, Util.CheckRoll(this.critStat, base.characterBody.master), DamageColorIndex.Default, null, -1f);
             }
         }
 
@@ -67,26 +66,30 @@ namespace EntityStates.Grovetender
         public override void FixedUpdate()
         {
             base.FixedUpdate();
+            base.characterBody.SetAimTimer(0.2f);
 
             this.stopwatch += Time.fixedDeltaTime;
             this.missileStopwatch += Time.fixedDeltaTime;
 
-            if (this.missileStopwatch >= 1f / GravekeeperBarrage.missileSpawnFrequency)
+            if (this.missileStopwatch >= DiscipleSwarm.missileSpawnFrequency / this.attackSpeedStat)
             {
-                this.missileStopwatch -= 1f / GravekeeperBarrage.missileSpawnFrequency;
+                this.missileStopwatch -= DiscipleSwarm.missileSpawnFrequency / this.attackSpeedStat;
                 Transform transform = this.childLocator.FindChild(GravekeeperBarrage.muzzleString);
 
                 if (transform)
                 {
                     Ray projectileRay = default(Ray);
+
                     projectileRay.origin = transform.position;
                     projectileRay.direction = base.GetAimRay().direction;
+
                     float maxDistance = 1000f;
                     RaycastHit raycastHit;
                     if (Physics.Raycast(base.GetAimRay(), out raycastHit, maxDistance, LayerIndex.world.mask))
                     {
                         projectileRay.direction = raycastHit.point - transform.position;
                     }
+
                     this.FireBlob(projectileRay, 0f, 0f);
                 }
             }
