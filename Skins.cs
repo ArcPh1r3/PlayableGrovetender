@@ -26,6 +26,8 @@ namespace PlayableGrovetender
 
             LoadoutAPI.SkinDefInfo skinDefInfo = default(LoadoutAPI.SkinDefInfo);
             skinDefInfo.BaseSkins = Array.Empty<SkinDef>();
+            skinDefInfo.ProjectileGhostReplacements = new SkinDef.ProjectileGhostReplacement[0];
+            skinDefInfo.MinionSkinReplacements = new SkinDef.MinionSkinReplacement[0];
 
             skinDefInfo.GameObjectActivations = Array.Empty<SkinDef.GameObjectActivation>();
 

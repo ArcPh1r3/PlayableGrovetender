@@ -610,7 +610,7 @@ namespace PlayableGrovetender
                             childName = "MuzzleJar",
                             localPos = new Vector3(-3.2f, -2.5f, 1),
                             localAngles = new Vector3(0, -90, 180),
-                            localScale = new Vector3(300, 300, 300),
+                            localScale = new Vector3(2, 2, 2),
                             limbMask = LimbFlags.None
                         }
                     }

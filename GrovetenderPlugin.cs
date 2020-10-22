@@ -19,7 +19,7 @@ namespace PlayableGrovetender
 {
     [BepInDependency("com.bepis.r2api")]
 
-    [BepInPlugin(MODUID, "Playable Grovetender", "0.0.2")]
+    [BepInPlugin(MODUID, "Playable Grovetender", "0.0.3")]
     [R2APISubmoduleDependency(nameof(PrefabAPI), nameof(SurvivorAPI), nameof(LoadoutAPI), nameof(LanguageAPI), nameof(BuffAPI), nameof(EffectAPI))]
 
     public class GrovetenderPlugin : BaseUnityPlugin
